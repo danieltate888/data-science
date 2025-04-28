@@ -2,3 +2,4 @@
 /models/purchase_model.pkl
 /data/processed/train_features.csv
 /data/processed/train_labels.csv
+/models/scaler.pkl

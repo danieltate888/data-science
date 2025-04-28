@@ -1,24 +1,18 @@
-from flask import Flask, request, jsonify
-from predict import predict_purchase  # 导入预测函数
+from fastapi import FastAPI, HTTPException
+from api.schemas import PurchaseRequest
+from api.predict import predict_purchase
 
-# // 创建Flask应用
-app = Flask(__name__)
+# 创建FastAPI应用
+app = FastAPI()
 
-# // 定义预测接口
-@app.route('/predict', methods=['POST'])
-def predict_api():
-    """
-    接收POST请求，调用predict.py里的predict_purchase函数，返回预测结果
-    """
-    data = request.get_json()
-
+# 定义预测接口
+@app.post("/predict")
+def predict_api(request: PurchaseRequest):
     try:
-        prediction = predict_purchase(data)
+        data = request.dict()
+        result = predict_purchase(data)
+        return result
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-
-    return jsonify({"Purchased": prediction})
-
-# // 启动Flask服务器
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=6000, debug=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
