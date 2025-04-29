@@ -1,62 +1,72 @@
-import pandas as pd
-import yaml
 import os
-import pickle
-from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import psycopg2
+from pyspark.sql import SparkSession
 
-# 读取配置
-def load_config(path='config/config.yaml'):
-    with open(path, 'r') as file:
-        config = yaml.safe_load(file)
-    return config
+# Initialize Spark session with Delta Lake and S3 (MinIO) support
+def init_spark():
+    spark = SparkSession.builder \
+        .appName("Build Features") \
+        .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.1.0,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262") \
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+        .getOrCreate()
 
-# 创建目录
-os.makedirs('data/processed', exist_ok=True)
-os.makedirs('models', exist_ok=True)
+    hadoop_conf = spark._jsc.hadoopConfiguration()
+    hadoop_conf.set("fs.s3a.access.key", "admin")
+    hadoop_conf.set("fs.s3a.secret.key", "admin123")
+    hadoop_conf.set("fs.s3a.endpoint", "http://localhost:9000")
+    hadoop_conf.set("fs.s3a.path.style.access", "true")
+    hadoop_conf.set("fs.s3a.connection.ssl.enabled", "false")
+    hadoop_conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    hadoop_conf.set("fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
+    return spark
 
-# 读取原始数据
-raw_df = pd.read_csv('data/raw/dataset.csv')
-print("原始数据：")
-print(raw_df.head())
+# Fetch mapping tables from PostgreSQL: convert ID -> name
+def fetch_mapping_tables():
+    conn = psycopg2.connect(
+        host="localhost", port=5435,
+        dbname="data-learning", user="admin", password="admin123"
+    )
+    genders = pd.read_sql("SELECT id, name AS gender FROM genders", conn)
+    occupations = pd.read_sql("SELECT id, name AS occupation FROM occupations", conn)
+    locations = pd.read_sql("SELECT id, name AS location FROM locations", conn)
+    products = pd.read_sql("SELECT id, name AS product_type FROM products", conn)
+    conn.close()
+    return genders, occupations, locations, products
 
-# 读取字典
-config = load_config()
-gender_map = config['gender_dict']
-occupation_map = config['occupation_dict']
-product_map = config['product_type_dict']
-location_map = config['location_dict']
+# Main feature extraction pipeline
+def main():
+    spark = init_spark()
 
-# ID映射
-raw_df['Gender'] = raw_df['GenderID'].map(gender_map)
-raw_df['Occupation'] = raw_df['OccupationID'].map(occupation_map)
-raw_df['ProductType'] = raw_df['ProductTypeID'].map(product_map)
-raw_df['Location'] = raw_df['LocationID'].map(location_map)
+    # Load Gold Layer from MinIO (Delta format)
+    df = spark.read.format("delta").load("s3a://data-learning/gold/")
+    pandas_df = df.toPandas()
 
-# 删除原ID
-raw_df.drop(['GenderID', 'OccupationID', 'ProductTypeID', 'LocationID'], axis=1, inplace=True)
+    # Restore actual names from ID columns
+    genders, occupations, locations, products = fetch_mapping_tables()
+    pandas_df = pandas_df.merge(genders, left_on="gender_id", right_on="id", how="left")
+    pandas_df = pandas_df.merge(occupations, left_on="occupation_id", right_on="id", how="left")
+    pandas_df = pandas_df.merge(locations, left_on="location_id", right_on="id", how="left")
+    pandas_df = pandas_df.merge(products, left_on="product_type_id", right_on="id", how="left")
 
-# 新增衍生特征：AgeLevel和AssetLevel
-raw_df['AgeLevel'] = raw_df['Age'].apply(lambda x: 1 if x < 18 else 0)
-raw_df['AssetLevel'] = raw_df['FamilyAssets'].apply(lambda x: 1 if x < 200000 else 0)
+    # Drop original ID columns and duplicate merge keys
+    pandas_df.drop(columns=["gender_id", "occupation_id", "location_id", "product_type_id", "id_x", "id_y", "id"], errors='ignore', inplace=True)
 
-# One-Hot编码
-raw_df = pd.get_dummies(raw_df, columns=['Gender', 'Occupation', 'ProductType', 'Location'])
+    # Define final feature columns and label
+    feature_cols = [
+        "age", "gender", "annual_income", "occupation",
+        "location", "family_assets", "product_type",
+        "community_id", "pagerank"
+    ]
+    label_col = "purchased"
 
-# 分割X和y
-X = raw_df.drop('Purchased', axis=1)
-y = raw_df['Purchased']
+    # Export features and labels as separate CSV files
+    os.makedirs('data/processed', exist_ok=True)
+    pandas_df[feature_cols].to_csv('data/processed/train_features.csv', index=False)
+    pandas_df[label_col].to_csv('data/processed/train_labels.csv', index=False)
 
-# 对数值特征标准化
-numerical_features = ['Age', 'AnnualIncome', 'FamilyAssets']
-scaler = StandardScaler()
-X[numerical_features] = scaler.fit_transform(X[numerical_features])
+    print("✅ Feature extraction complete: train_features.csv & train_labels.csv generated")
 
-# 保存特征和标签
-X.to_csv('data/processed/train_features.csv', index=False)
-y.to_csv('data/processed/train_labels.csv', index=False)
-
-# 保存scaler对象
-with open('models/scaler.pkl', 'wb') as f:
-    pickle.dump(scaler, f)
-
-print("\u2705 特征工程完成：标准化 + 衍生特征生成")
+if __name__ == "__main__":
+    main()

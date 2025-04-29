@@ -10,3 +10,4 @@ node_modules/
 /data-engineering/data/bronze/bronze.parquet
 /data-engineering/data/bronze/orders.parquet
 /data-engineering/data/bronze/users.parquet
+/data-engineering/data/tmp/neo4j_user_features.csv

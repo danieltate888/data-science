@@ -1,11 +1,11 @@
 
-DROP TABLE IF EXISTS products;
-CREATE TABLE products (
-    id INT PRIMARY KEY,
-    name VARCHAR(100)
-);
-INSERT INTO products (id, name) VALUES
-(0, 'Laptop'),
+            DROP TABLE IF EXISTS products;
+            CREATE TABLE products (
+                                      id INT PRIMARY KEY,
+                                      name VARCHAR(100)
+            );
+            INSERT INTO products (id, name) VALUES
+            (0, 'Laptop'),
 (1, 'Smartphone'),
 (2, 'Camera'),
 (3, 'Cosmetics'),

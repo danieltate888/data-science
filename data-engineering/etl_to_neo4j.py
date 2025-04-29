@@ -4,6 +4,7 @@ from pyspark.sql import SparkSession
 import psycopg2
 from pyspark.sql.functions import col
 
+# Initialize Spark session with Delta Lake + MinIO (S3-compatible) support
 def init_spark():
     spark = SparkSession.builder \
         .appName("Load Silver Users to Neo4j") \
@@ -23,6 +24,7 @@ def init_spark():
 
     return spark
 
+# Connect to local Neo4j instance
 def connect_neo4j():
     uri = "bolt://localhost:7687"
     user = "neo4j"
@@ -30,6 +32,7 @@ def connect_neo4j():
     driver = GraphDatabase.driver(uri, auth=(user, password))
     return driver
 
+# Load mapping tables from PostgreSQL and return as pandas DataFrames
 def fetch_mapping_tables():
     conn = psycopg2.connect(
         host="localhost", port=5435,
@@ -42,6 +45,7 @@ def fetch_mapping_tables():
     conn.close()
     return genders, occupations, locations, products
 
+# Create User and Product nodes in Neo4j
 def create_user_and_product_nodes(tx, batch):
     query = """
     UNWIND $batch AS row
@@ -56,6 +60,7 @@ def create_user_and_product_nodes(tx, batch):
     """
     tx.run(query, batch=batch)
 
+# Create PURCHASED relationships in Neo4j
 def create_purchase_relationships(tx, batch):
     query = """
     UNWIND $batch AS row
@@ -66,6 +71,7 @@ def create_purchase_relationships(tx, batch):
     """
     tx.run(query, batch=batch)
 
+# Insert nodes and relationships to Neo4j in batches
 def insert_data_to_neo4j(driver, records, batch_size=100):
     with driver.session() as session:
         for i in range(0, len(records), batch_size):
@@ -73,24 +79,29 @@ def insert_data_to_neo4j(driver, records, batch_size=100):
             session.execute_write(create_user_and_product_nodes, batch)
             session.execute_write(create_purchase_relationships, batch)
 
+# Main pipeline
 def main():
     spark = init_spark()
     driver = connect_neo4j()
 
+    # Load mapping tables from PostgreSQL
     genders, occupations, locations, products = fetch_mapping_tables()
 
+    # Load Silver table from Delta (MinIO)
     df = spark.read.format("delta").load("s3a://data-learning/silver/")
 
+    # Replace ID with actual names from mapping tables
     genders_df = spark.createDataFrame(genders).withColumnRenamed("id", "gender_id")
     occupations_df = spark.createDataFrame(occupations).withColumnRenamed("id", "occupation_id")
     locations_df = spark.createDataFrame(locations).withColumnRenamed("id", "location_id")
     products_df = spark.createDataFrame(products).withColumnRenamed("id", "product_type_id")
 
     df = df.join(genders_df, on="gender_id", how="left") \
-           .join(occupations_df, on="occupation_id", how="left") \
-           .join(locations_df, on="location_id", how="left") \
-           .join(products_df, on="product_type_id", how="left")
+        .join(occupations_df, on="occupation_id", how="left") \
+        .join(locations_df, on="location_id", how="left") \
+        .join(products_df, on="product_type_id", how="left")
 
+    # Fill missing fields
     df = df.fillna({
         "user_id": 0,
         "age": 0,
@@ -103,9 +114,11 @@ def main():
         "purchased": 0
     })
 
+    # Clean Neo4j database before import
     with driver.session() as session:
         session.run("MATCH (n) DETACH DELETE n")
 
+    # Collect data to driver for Neo4j insert
     records = df.select(
         "user_id", "age", "gender", "annual_income",
         "family_assets", "occupation", "location",
@@ -129,7 +142,7 @@ def main():
     insert_data_to_neo4j(driver, data)
     driver.close()
 
-    print("\n✅ Neo4j 导入完成，节点和关系已成功建立！")
+    print("✅ Neo4j import complete: nodes and relationships created.")
 
 if __name__ == "__main__":
     main()

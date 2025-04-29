@@ -2,10 +2,10 @@ from fastapi import FastAPI, HTTPException
 from api.schemas import PurchaseRequest
 from api.predict import predict_purchase
 
-# 创建FastAPI应用
+# Create FastAPI application instance
 app = FastAPI()
 
-# 定义预测接口
+# Define prediction API endpoint
 @app.post("/predict")
 def predict_api(request: PurchaseRequest):
     try:

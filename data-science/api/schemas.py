@@ -1,13 +1,10 @@
-# api/schemas.py
-
 from pydantic import BaseModel
 
-# 定义前端传过来的请求格式
 class PurchaseRequest(BaseModel):
-    Age: int
-    GenderID: int
-    AnnualIncome: int
-    OccupationID: int
-    ProductTypeID: int
-    LocationID: int
-    FamilyAssets: int
+    age: int
+    gender_id: int
+    annual_income: float
+    occupation_id: int
+    product_type_id: int
+    location_id: int
+    family_assets: float
