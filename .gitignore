@@ -1,5 +1,12 @@
-/models/feature_list.pkl
-/models/purchase_model.pkl
-/data/processed/train_features.csv
-/data/processed/train_labels.csv
-/models/scaler.pkl
+/data-science/models/feature_list.pkl
+/data-science/models/purchase_model.pkl
+/data-science/data/processed/train_features.csv
+/data-science/data/processed/train_labels.csv
+/data-science/models/scaler.pkl
+**/.venv/
+.env
+persisted-data/
+node_modules/
+/data-engineering/data/bronze/bronze.parquet
+/data-engineering/data/bronze/orders.parquet
+/data-engineering/data/bronze/users.parquet

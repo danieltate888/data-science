@@ -7,3 +7,4 @@ uvicorn
 PyYAML
 pydantic~=2.11.3
 lightgbm
+faker

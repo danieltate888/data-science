@@ -17,3 +17,6 @@ generate_dataset:
 
 find_best_threshold:
 	python3 scripts/find_best_threshold.py
+
+generate_sql_files:
+	python3 scripts/generate_sql_files.py
